@@ -69,6 +69,10 @@ tr:hover td{background:#f8fafc}
 .muted{color:var(--muted)} .small-txt{font-size:12px}
 .alert-item{padding:8px 10px;border:1px solid #fecaca;background:#fef2f2;border-radius:8px;margin-bottom:7px;font-size:13px}
 .demo-banner{display:none;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px}
+.sync-pill{margin:0 16px 12px;padding:6px 10px;border-radius:20px;font-size:12px;font-weight:700;text-align:center;background:rgba(255,255,255,.14);color:#e2e8f0}
+.sync-pill.ok{background:#14532d;color:#bbf7d0}
+.sync-pill.busy{background:#1e3a5f;color:#bfdbfe}
+.sync-pill.warn{background:#713f12;color:#fde68a}
 .empty{padding:18px;text-align:center;color:var(--muted)}
 .searchbar{max-width:320px}
 .inline-form{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
@@ -171,7 +175,8 @@ tr:hover td{background:#f8fafc}
       <div>Signed in as <b id="currentUserName">—</b><span class="role-badge" id="currentUserRole">—</span></div>
       <button class="btn small secondary" id="btnLogout" style="margin-top:8px">Logout</button>
     </div>
-    <div class="side-foot">MediCore v1.3 · Works offline<br>Data stays in this browser.</div>
+    <div class="sync-pill" id="syncPill" style="display:none"></div>
+    <div class="side-foot">MediCore v1.3 · Works offline<br>Optional cloud sync in Settings.</div>
   </aside>
 
   <!-- ============ MAIN ============ -->
@@ -425,14 +430,36 @@ tr:hover td{background:#f8fafc}
         <p class="small-txt muted" style="margin-top:10px">Demo accounts (created only by “Load Demo Data” / “Explore the demo”; their usernames/passwords are documented in README.md) — delete these accounts before real use; a DEMO MODE banner stays visible in the app while any of them exists.</p>
       </div>
       <div class="card">
+        <h3>Cloud Sync</h3>
+        <p class="small-txt muted" style="margin-bottom:12px">Optional. Create <b>one</b> cloud account here and sign in with the same account on every device you use (this phone, the reception desk, the pharmacy counter) — your clinic data then follows you: entries save on the device even with no internet, and when the internet returns they sync automatically. The sync pill in the sidebar always shows the state. This cloud account is <b>separate from the staff logins</b> in User Accounts: staff accounts decide who may do what inside the app; the cloud account only carries the same data between <i>your</i> devices.</p>
+        <div id="cloudNotConfigured" style="display:none">
+          <p class="small-txt muted">Cloud sync is not configured in this copy. Everything keeps working locally in this browser — no data is sent anywhere.</p>
+        </div>
+        <div id="cloudSignedOut" style="display:none">
+          <div class="row">
+            <div class="field"><label>Cloud account email</label><input type="email" id="cloudEmail" placeholder="you@example.com" autocomplete="username"></div>
+            <div class="field"><label>Cloud account password</label><input type="password" id="cloudPassword" placeholder="Min. 6 characters" autocomplete="current-password"></div>
+          </div>
+          <button class="btn" id="btnCloudCreate">Create cloud account</button>
+          <button class="btn secondary" id="btnCloudSignIn" style="margin-left:8px">Sign in</button>
+          <div class="auth-error" id="cloudMsg" style="margin-top:12px"></div>
+        </div>
+        <div id="cloudSignedIn" style="display:none">
+          <p class="small-txt" style="margin-bottom:6px">Signed in as <b id="cloudUserEmail">—</b></p>
+          <p class="small-txt muted" id="cloudStatusText" style="margin-bottom:12px"></p>
+          <button class="btn" id="btnCloudSyncNow">Sync now</button>
+          <button class="btn secondary" id="btnCloudSignOut" style="margin-left:8px">Sign out</button>
+        </div>
+      </div>
+      <div class="card">
         <h3>Demo &amp; Data</h3>
-        <p class="small-txt muted" style="margin-bottom:12px">Load the demo data set to explore a fully working clinic, or erase everything and start fresh. All data is stored only in this browser (localStorage).</p>
+        <p class="small-txt muted" style="margin-bottom:12px">Load the demo data set to explore a fully working clinic, or erase everything and start fresh. Data is stored in this browser (localStorage) and — only while you are signed in to Cloud Sync — mirrored to your own cloud account. Demo data is never synced.</p>
         <button class="btn" id="btnLoadDemo">Load Demo Data</button>
         <button class="btn danger" id="btnResetData" style="margin-left:8px">Reset All Data</button>
       </div>
       <div class="card">
         <h3>About MediCore</h3>
-        <p class="small-txt muted">MediCore v1.3 — a single-file clinic &amp; hospital management system with user login and role-based access control. It ships with no default accounts — the first Admin account is created on first run, and demo accounts exist only if you explicitly load the demo. No server, no internet and no installation required: open this file in any modern browser. Figures are estimates for management use; always verify critical records.</p>
+        <p class="small-txt muted">MediCore v1.3 — a single-file clinic &amp; hospital management system with user login and role-based access control. It ships with no default accounts — the first Admin account is created on first run, and demo accounts exist only if you explicitly load the demo. No installation required: open this file in any modern browser. This personal edition also offers optional cloud sync (Settings → Cloud Sync) through your own Firebase account; without it, everything works fully offline in this browser. Figures are estimates for management use; always verify critical records.</p>
       </div>
     </section>
 
@@ -454,6 +481,13 @@ tr:hover td{background:#f8fafc}
 
 <!-- ============ PRINT AREA ============ -->
 <div id="printArea"></div>
+
+<!-- Firebase compat SDKs (personal cloud edition): used only by the
+     optional Cloud Sync in Settings. If they cannot load (e.g. no
+     internet), the app simply runs fully local — see cloudSdkReady(). -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
 <script>
 "use strict";
@@ -481,6 +515,7 @@ function defaultDB(){
     medicines: [], labTests: [], labOrders: [], dispenses: [],
     settings: { clinicName: "MediCore Demo Clinic", address: "123 Wellness Avenue", phone: "+1 555 010 2233", currency: "$", country: "", currencyCode: "" },
     users: [],
+    _meta: { updatedAt: 0, device: "" },
     counters: Object.assign({}, CONFIG.COUNTER_STARTS)
   };
 }
@@ -503,9 +538,25 @@ function loadDB(){
        buy price is then "unknown" (stored as ""), and the pharmacy
        profit rule below counts zero profit for sales of that medicine. */
     if(Array.isArray(DB.medicines)) DB.medicines.forEach(function(m){ if(m.costPrice == null) m.costPrice = ""; });
+    /* Cloud edition (personal copies): every database carries sync
+       metadata. Databases saved before it get a neutral stamp
+       (updatedAt 0), so they can never outrank real cloud data. */
+    if(!DB._meta || typeof DB._meta.updatedAt !== "number") DB._meta = { updatedAt: 0, device: "" };
   }catch(e){ /* corrupted storage -> keep defaults */ }
 }
-function saveDB(){ if(store){ try{ store.setItem(LS_KEY, JSON.stringify(DB)); }catch(e){} } }
+function saveDB(){
+  /* Cloud edition: stamp the sync metadata, persist locally
+     (localStorage stays the always-on store), then let the sync
+     engine debounce a cloud push — cloudSchedulePush() is a no-op
+     unless a cloud account is signed in on this device. */
+  if(DB){
+    if(!DB._meta) DB._meta = { updatedAt: 0, device: "" };
+    DB._meta.updatedAt = Date.now();
+    DB._meta.device = cloudDeviceId();
+  }
+  if(store){ try{ store.setItem(LS_KEY, JSON.stringify(DB)); }catch(e){} }
+  cloudSchedulePush();
+}
 
 /* ---------------- Pure helpers (no DOM) ---------------- */
 function round2(n){ return Math.round(((Number(n)||0) + Number.EPSILON) * 100) / 100; }
@@ -938,6 +989,7 @@ function doLogout(){
 /* "Explore the demo": seed the sample clinic + demo accounts, then sign
    in as the demo Admin so a first-time visitor lands inside the app. */
 function exploreDemo(){
+  cloudSetDemoFlag(true);   /* demo data must never reach the cloud */
   seedDemoData();
   ensureDemoUsers().then(function(){
     setSession("admin", "Admin");
@@ -1787,6 +1839,7 @@ function renderSettings(){
   fillCountryOptions();
   el("setCountry").value = DB.settings.country || "";
   el("setCurrency").value = DB.settings.currency || "$";
+  renderCloudCard();
 }
 function saveSettings(){
   if(!requirePerm("settings.write")) return;
@@ -1804,6 +1857,7 @@ function resetAllData(){
   if(!requirePerm("data.manage")) return;
   if(!confirm("Erase ALL data (patients, doctors, invoices, stock AND user accounts…) and start fresh? This cannot be undone.")) return;
   if(store){ store.removeItem(LS_KEY); }
+  cloudSetDemoFlag(false);   /* a reset also ends demo isolation */
   clearSession();
   DB = defaultDB(); saveDB();
   alert("All data has been reset. Create your Admin account to continue.");
@@ -1815,6 +1869,7 @@ function resetAllData(){
    also creates the four demo user accounts if they do not exist yet. */
 function loadDemoData(){
   if(!requirePerm("data.manage")) return;
+  cloudSetDemoFlag(true);   /* demo data must never reach the cloud */
   seedDemoData();
   ensureDemoUsers().then(function(){ renderAll(); });
 }
@@ -1880,6 +1935,382 @@ function seedDemoData(){
   alert("Demo data loaded. Explore the dashboard!");
 }
 
+/* ================================================================
+   CLOUD SYNC — PERSONAL EDITION ONLY (not part of the sold product)
+   ----------------------------------------------------------------
+   This copy of MediCore can mirror its whole database to the
+   owner's own Firebase Realtime Database, so the SAME clinic data
+   is available on every device signed in to one cloud account:
+
+   - localStorage stays the always-on local store. Every saveDB()
+     writes locally first (the app fully works with no internet),
+     then the sync engine debounce-pushes the whole DB to
+     workspaces/<cloud-uid>/db as one JSON document.
+   - The DB carries _meta { updatedAt, device }, stamped on every
+     saveDB(). On a device that has linked before, conflicts are
+     settled by updatedAt alone (newer wins, no merge dialogs): at
+     cloud sign-in and on every remote change, the newer copy
+     replaces the older one. EXCEPTION — the first link: a device
+     that has NEVER linked adopts the existing cloud workspace
+     outright, whatever its local timestamp says (a fresh device
+     stamps "now" on its near-empty database at first-run setup,
+     which would otherwise outrank and erase the real workspace).
+     Whenever the cloud copy replaces the local one, the outgoing
+     local database is first stashed in localStorage as a backup.
+   - The staff session (medicore_session_v1) is NEVER synced — it
+     stays device-local by design.
+   - Demo isolation: "Explore the demo" / "Load Demo Data" sets a
+     local flag that pauses sync, so demo data is never uploaded
+     and the cloud copy is never touched while exploring the demo.
+   ================================================================ */
+const FIREBASE_CONFIG = {
+  /* __FIREBASE_CONFIG__ — paste the web-app config of your own
+     Firebase project here (Firebase console → Project settings →
+     Your apps → Web app). Until all values are real (not "TODO"),
+     this copy simply runs fully local: no cloud code fires and the
+     Settings card says cloud sync is not configured. */
+  apiKey: "AIzaSyDuGlgi5UsXHLpdKeQffIFDu6gNQjuKXQQ",
+  authDomain: "medicore-cloud.firebaseapp.com",
+  databaseURL: "https://medicore-cloud-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "medicore-cloud",
+  storageBucket: "medicore-cloud.firebasestorage.app",
+  messagingSenderId: "893691060218",
+  appId: "1:893691060218:web:33999f3b1b96c97bd28e43"
+};
+var CLOUD_DEVICE_KEY = "medicore_device_v1";
+var CLOUD_DEMO_KEY = "medicore_demo_v1";
+var CLOUD_LINKED_KEY = "medicore_cloud_linked_v1";
+var CLOUD_BACKUP_KEY = "medicore_db_backup_v1";
+var CLOUD_BACKUP_AT_KEY = "medicore_db_backup_at_v1";
+var CLOUD_DEMO_MSG = "Demo mode is on — cloud sync is paused. Cloud sign-in is disabled while you explore the demo; reset the demo data (Settings → Demo & Data → Reset All Data) to use cloud sync.";
+var cloudUser = null;      /* Firebase user while signed in, else null */
+var cloudRef = null;       /* ref to workspaces/<uid>/db */
+var cloudListener = null;  /* active "value" listener, else null */
+var cloudPushTimer = null; /* debounce timer for pushes */
+var cloudState = "off";    /* off | syncing | synced | offline */
+var cloudReconciled = false; /* this session has completed a cloud fetch since sign-in */
+
+/* Short random id for THIS device/browser, persisted so the sync
+   engine can tell its own writes apart from other devices' writes. */
+function cloudDeviceId(){
+  if(!store) return "nodevice";
+  try{
+    var id = store.getItem(CLOUD_DEVICE_KEY);
+    if(!id){
+      id = "dev-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 1e9).toString(36);
+      store.setItem(CLOUD_DEVICE_KEY, id);
+    }
+    return id;
+  }catch(e){ return "nodevice"; }
+}
+/* Demo isolation flag (see the header comment). */
+function cloudDemoPaused(){
+  if(!store) return false;
+  try{ return store.getItem(CLOUD_DEMO_KEY) === "1"; }catch(e){ return false; }
+}
+function cloudSetDemoFlag(on){
+  if(store){ try{ if(on) store.setItem(CLOUD_DEMO_KEY, "1"); else store.removeItem(CLOUD_DEMO_KEY); }catch(e){} }
+  if(on && cloudPushTimer){ clearTimeout(cloudPushTimer); cloudPushTimer = null; }
+  renderCloudUI();
+}
+/* "Linked" = this device has completed a cloud sign-in reconcile or
+   a successful first push at least once. The flag is per-device and
+   is NEVER synced: it is what separates "this device already belongs
+   to the workspace" from "this device has only ever seen its own
+   fresh local data" — the distinction the first-link rule in
+   cloudReconcile() depends on. */
+function cloudIsLinked(){
+  if(!store) return false;
+  try{ return store.getItem(CLOUD_LINKED_KEY) === "1"; }catch(e){ return false; }
+}
+function cloudMarkLinked(){
+  if(store){ try{ store.setItem(CLOUD_LINKED_KEY, "1"); }catch(e){} }
+}
+/* Safety stash: before the cloud copy replaces the local database,
+   keep the outgoing local database in localStorage so nothing
+   entered on this device is ever silently lost. Skipped only when
+   the outgoing database is the untouched first-run default (no
+   staff accounts and no records of any kind) — there is nothing in
+   it worth keeping. Overwritten on every replacement; the sibling
+   key records when the stash was taken. */
+function cloudStashBackup(){
+  if(!store || !DB) return;
+  var recordKeys = ["patients","doctors","appointments","invoices","medicines","labTests","labOrders","dispenses"];
+  var hasContent = (Array.isArray(DB.users) && DB.users.length > 0) ||
+    recordKeys.some(function(k){ return Array.isArray(DB[k]) && DB[k].length > 0; });
+  if(!hasContent) return;
+  try{
+    store.setItem(CLOUD_BACKUP_KEY, JSON.stringify(DB));
+    store.setItem(CLOUD_BACKUP_AT_KEY, String(Date.now()));
+  }catch(e){}
+}
+function cloudConfigured(){
+  return !!(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "TODO" &&
+            FIREBASE_CONFIG.databaseURL && FIREBASE_CONFIG.databaseURL !== "TODO");
+}
+function cloudSdkReady(){
+  return typeof firebase !== "undefined" && !!firebase &&
+         typeof firebase.auth === "function" && typeof firebase.database === "function";
+}
+function cloudSignedIn(){ return !!(cloudUser && cloudRef); }
+
+/* ---- Sync status pill (sidebar) + Settings card ---- */
+function cloudSetState(s){ cloudState = s; renderCloudUI(); }
+function cloudStatusSentence(){
+  if(cloudDemoPaused()) return "Demo mode is on — sync is paused and demo data is never uploaded.";
+  if(cloudState === "synced") return "Status: synced. Changes made on any signed-in device appear on your other devices.";
+  if(cloudState === "syncing") return "Status: syncing…";
+  if(cloudState === "offline") return "Status: offline — changes keep saving on this device and will sync when you are back online.";
+  return "Status: connected.";
+}
+function renderCloudUI(){
+  if(typeof document === "undefined") return;
+  var pill = el("syncPill");
+  if(pill){
+    if(!cloudConfigured()){ pill.style.display = "none"; }
+    else{
+      pill.style.display = "block";
+      var cls = "sync-pill", txt;
+      if(cloudDemoPaused()){ txt = "Demo mode — sync paused"; cls += " warn"; }
+      else if(!cloudSignedIn()){ txt = "Cloud: Off"; }
+      else if(cloudState === "synced"){ txt = "☁ Synced"; cls += " ok"; }
+      else if(cloudState === "syncing"){ txt = "☁ Syncing…"; cls += " busy"; }
+      else if(cloudState === "offline"){ txt = "⚠ Offline — saving on this device"; cls += " warn"; }
+      else{ txt = "Cloud: On"; }
+      pill.textContent = txt;
+      pill.className = cls;
+    }
+  }
+  renderCloudCard();
+}
+function renderCloudCard(){
+  if(typeof document === "undefined") return;
+  var nc = el("cloudNotConfigured"), so = el("cloudSignedOut"), si = el("cloudSignedIn");
+  if(!nc || !so || !si) return;
+  if(!cloudConfigured()){
+    nc.style.display = "block"; so.style.display = "none"; si.style.display = "none";
+    return;
+  }
+  nc.style.display = "none";
+  if(cloudSignedIn()){
+    so.style.display = "none"; si.style.display = "block";
+    var em = el("cloudUserEmail"); if(em) em.textContent = cloudUser.email || "";
+    var st = el("cloudStatusText"); if(st) st.textContent = cloudStatusSentence();
+  }else{
+    si.style.display = "none"; so.style.display = "block";
+    /* In demo mode the card itself carries the paused state (the
+       sign-in buttons below stay blocked in the action handlers). */
+    if(cloudDemoPaused()) cloudMsg(CLOUD_DEMO_MSG);
+    else { var cm = el("cloudMsg"); if(cm && cm.textContent === CLOUD_DEMO_MSG) cloudMsg(""); }
+  }
+}
+function cloudMsg(msg){
+  var n = el("cloudMsg"); if(!n) return;
+  n.textContent = msg || "";
+  n.style.display = msg ? "block" : "none";
+}
+
+/* ---- Cloud account actions (Settings → Cloud Sync) ---- */
+function cloudCredentials(){
+  return { email: fieldVal("cloudEmail"), pw: el("cloudPassword") ? el("cloudPassword").value : "" };
+}
+function cloudGuardReady(){
+  if(!cloudConfigured()){ cloudMsg("Cloud sync is not configured in this copy."); return false; }
+  if(!cloudSdkReady()){ cloudMsg("The cloud libraries could not be loaded — check your internet connection and reload this page."); return false; }
+  return true;
+}
+function cloudCreateAccount(){
+  if(cloudDemoPaused()){ cloudMsg(CLOUD_DEMO_MSG); return; }
+  if(!cloudGuardReady()) return;
+  var c = cloudCredentials();
+  if(!c.email || c.pw.length < 6){ cloudMsg("Enter an email and a password of at least 6 characters."); return; }
+  firebase.auth().createUserWithEmailAndPassword(c.email, c.pw).then(function(){
+    cloudMsg("");
+  }).catch(function(err){ cloudMsg(err && err.message ? err.message : "Could not create the cloud account."); });
+}
+function cloudSignIn(){
+  if(cloudDemoPaused()){ cloudMsg(CLOUD_DEMO_MSG); return; }
+  if(!cloudGuardReady()) return;
+  var c = cloudCredentials();
+  if(!c.email || !c.pw){ cloudMsg("Enter your cloud account email and password."); return; }
+  firebase.auth().signInWithEmailAndPassword(c.email, c.pw).then(function(){
+    cloudMsg("");
+  }).catch(function(err){ cloudMsg(err && err.message ? err.message : "Could not sign in to the cloud account."); });
+}
+function cloudSignOut(){
+  if(!cloudSdkReady()) return;
+  firebase.auth().signOut().catch(function(){});
+}
+/* "Sync now" settles local vs cloud by the same updatedAt rule the
+   sign-in reconcile uses (fetch once, newer copy wins). */
+function cloudSyncNow(){ cloudReconcile(); }
+
+/* ---- Sync engine ---- */
+function cloudMetaTime(db){
+  return (db && db._meta && typeof db._meta.updatedAt === "number") ? db._meta.updatedAt : 0;
+}
+/* Called by saveDB() after every local save. Debounces ~1.2s so a
+   burst of edits becomes one upload. No-op unless signed in. */
+function cloudSchedulePush(){
+  if(!cloudSignedIn()) return;
+  if(cloudDemoPaused()){ renderCloudUI(); return; }
+  if(cloudPushTimer) clearTimeout(cloudPushTimer);
+  cloudPushTimer = setTimeout(function(){ cloudPushTimer = null; cloudPushNow(); }, 1200);
+}
+function cloudPushNow(){
+  if(!cloudSignedIn()) return;
+  if(cloudDemoPaused()){ renderCloudUI(); return; }
+  /* Never push blind: a device that has not completed a sign-in
+     reconcile this session must settle local-vs-cloud first. Without
+     this, a debounced save or a reconnect could upload a fresh,
+     near-empty local database over the established workspace before
+     cloudReconcile() ever ran (its newer _meta stamp would "win").
+     cloudReconcile() fetches first and then pushes itself when the
+     local copy genuinely should win, so diverting there is safe. */
+  if(!cloudIsLinked() && !cloudReconciled){ cloudReconcile(); return; }
+  if(cloudPushTimer){ clearTimeout(cloudPushTimer); cloudPushTimer = null; }
+  /* Stamp BEFORE pushing, so the uploaded document carries this
+     device's id: the value listener uses it to ignore the echo of
+     our own write. The same stamp is written to localStorage, so
+     both copies agree exactly. (The Firebase web SDK also queues
+     writes made while offline and completes them on reconnect; if
+     the page is closed before that, the localStorage copy — with its
+     newer updatedAt — wins the compare at the next sign-in and is
+     pushed then.) */
+  if(!DB._meta) DB._meta = { updatedAt: 0, device: "" };
+  DB._meta.updatedAt = Date.now();
+  DB._meta.device = cloudDeviceId();
+  if(store){ try{ store.setItem(LS_KEY, JSON.stringify(DB)); }catch(e){} }
+  cloudSetState("syncing");
+  var payload = JSON.parse(JSON.stringify(DB));
+  cloudRef.set(payload).then(function(){
+    cloudMarkLinked();   /* a successful push links this device */
+    cloudSetState("synced");
+  }).catch(function(){
+    cloudSetState("offline");
+  });
+}
+/* Fetch the cloud document once and settle local vs cloud.
+   - No cloud document yet → push the local copy as the initial
+     workspace (the successful push links this device).
+   - Device NOT linked + a cloud document exists → FIRST LINK: the
+     device adopts the cloud document outright, whatever the local
+     _meta.updatedAt says. This is the guard against the data-loss
+     trap: saveDB() stamps "now" on every save, so a fresh device
+     that only just created its first-run staff account holds a
+     near-empty database that is strictly NEWER than the real
+     workspace — the plain timestamp rule would push it over the
+     cloud and every other device would then adopt the wipe.
+     cloudApplyRemote() stashes the outgoing local database first.
+   - Device linked → the _meta.updatedAt rule (newer wins). */
+function cloudReconcile(){
+  if(!cloudSignedIn()) return;
+  if(cloudDemoPaused()){ renderCloudUI(); return; }
+  cloudSetState("syncing");
+  cloudRef.once("value").then(function(snap){
+    cloudReconciled = true;   /* this session has now seen the cloud state */
+    var remote = snap.val();
+    if(!remote){ cloudPushNow(); return; }
+    if(!cloudIsLinked()){
+      cloudApplyRemote(remote);
+      cloudMarkLinked();
+      return;
+    }
+    var rT = cloudMetaTime(remote), lT = cloudMetaTime(DB);
+    if(rT > lT) cloudApplyRemote(remote);
+    else if(lT > rT) cloudPushNow();
+    else cloudSetState("synced");
+  }).catch(function(){ cloudSetState("offline"); });
+}
+/* Replace the local database with a cloud document. First the
+   outgoing local database is stashed (cloudStashBackup) so a
+   replacement can never silently destroy data entered on this
+   device. The local persist deliberately bypasses saveDB():
+   saveDB would restamp _meta with this device + now and echo the
+   document straight back to the cloud. Afterwards: if the staff
+   session's account still exists in the new data, refresh the UI
+   and keep working; if not, sign the staff session out and say
+   why on the login screen. */
+function cloudApplyRemote(remote){
+  var fresh = JSON.parse(JSON.stringify(remote));
+  if(!fresh || !fresh.settings || !Array.isArray(fresh.users)) return;
+  cloudStashBackup();
+  DB = fresh;
+  if(!DB._meta) DB._meta = { updatedAt: 0, device: "" };
+  if(store){ try{ store.setItem(LS_KEY, JSON.stringify(DB)); }catch(e){} }
+  cloudSetState("synced");
+  if(sessionUser()){
+    applyPermissions();
+    renderAll();
+  }else{
+    clearSession();
+    showAuth(DB.users.length ? "login" : "setup");
+    authError(DB.users.length ? "loginError" : "setupError", "Data synced from cloud — please sign in.");
+  }
+}
+function cloudAttachListener(){
+  if(!cloudSignedIn() || cloudListener) return;
+  cloudListener = function(snap){
+    var remote = snap.val();
+    if(!remote) return;
+    if(cloudDemoPaused()) return;   /* demo mode: hands off, both ways */
+    var rMeta = remote._meta || {};
+    if(rMeta.device && rMeta.device === cloudDeviceId()){
+      if(cloudState === "syncing") cloudSetState("synced");
+      return;                       /* echo of our own write — ignore */
+    }
+    if(cloudMetaTime(remote) > cloudMetaTime(DB)) cloudApplyRemote(remote);
+  };
+  try{ cloudRef.on("value", cloudListener); }catch(e){}
+}
+function cloudDetachListener(){
+  if(cloudRef && cloudListener){ try{ cloudRef.off("value", cloudListener); }catch(e){} }
+  cloudListener = null;
+}
+function cloudWatchConnection(){
+  try{
+    firebase.database().ref(".info/connected").on("value", function(snap){
+      if(!cloudSignedIn()) return;
+      if(snap.val() === false){ if(cloudState !== "offline") cloudSetState("offline"); }
+      else if(cloudState === "offline"){ cloudPushNow(); }
+    });
+  }catch(e){}
+}
+/* Boot: paint the pill/card, track browser online/offline, and (when
+   configured) start Firebase Auth. Firebase Auth remembers the
+   cloud sign-in across reloads, so a returning device resumes
+   syncing on its own — the staff sign-in is still asked separately. */
+function cloudInit(){
+  renderCloudUI();
+  if(typeof window !== "undefined" && window.addEventListener){
+    window.addEventListener("offline", function(){ if(cloudSignedIn()) cloudSetState("offline"); });
+    window.addEventListener("online", function(){ if(cloudSignedIn()) cloudPushNow(); });
+  }
+  if(!cloudConfigured() || !cloudSdkReady()) return;
+  try{
+    if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+  }catch(e){ return; }
+  firebase.auth().onAuthStateChanged(function(user){
+    cloudDetachListener();
+    cloudReconciled = false;   /* every (new) sign-in must settle first */
+    if(user){
+      cloudUser = user;
+      cloudRef = firebase.database().ref("workspaces/" + user.uid + "/db");
+      var p = el("cloudPassword"); if(p) p.value = "";
+      cloudSetState("syncing");
+      cloudReconcile();
+      cloudAttachListener();
+      cloudWatchConnection();
+    }else{
+      cloudUser = null;
+      cloudRef = null;
+      if(cloudPushTimer){ clearTimeout(cloudPushTimer); cloudPushTimer = null; }
+      cloudSetState("off");
+    }
+    renderCloudUI();
+  });
+}
+
 /* ---------------- Init ---------------- */
 function init(){
   loadDB();
@@ -1937,6 +2368,13 @@ function init(){
   el("btnExploreDemo").addEventListener("click", exploreDemo);
   el("loginPassword").addEventListener("keydown", function(e){ if(e.key === "Enter") attemptLogin(); });
   el("setupPassword2").addEventListener("keydown", function(e){ if(e.key === "Enter") submitSetup(); });
+  /* Cloud sync wiring (personal edition) */
+  el("btnCloudCreate").addEventListener("click", cloudCreateAccount);
+  el("btnCloudSignIn").addEventListener("click", cloudSignIn);
+  el("btnCloudSignOut").addEventListener("click", cloudSignOut);
+  el("btnCloudSyncNow").addEventListener("click", cloudSyncNow);
+  el("cloudPassword").addEventListener("keydown", function(e){ if(e.key === "Enter") cloudSignIn(); });
+  cloudInit();
   authGate();
 }
 if (typeof document !== "undefined" && typeof window !== "undefined"){
