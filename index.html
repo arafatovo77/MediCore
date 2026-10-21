@@ -316,8 +316,11 @@ tr:hover td{background:#f8fafc}
           <div class="field" style="max-width:110px"><label>Quantity</label><input type="number" id="qaQty" min="1" step="1" inputmode="numeric" placeholder="Qty"></div>
           <div class="field" style="max-width:170px"><label>Expiry (optional)</label><input type="date" id="qaExpiry"></div>
           <div class="field" style="align-self:flex-end"><button class="btn" id="btnQuickAdd" style="width:100%">Add</button></div>
+          <div class="field" style="align-self:flex-end"><button type="button" class="btn secondary" id="btnScanQA" style="width:100%">📷 Scan</button></div>
         </div>
         <datalist id="medNameList"></datalist>
+        <div id="scanNoticeQA" class="small-txt muted" style="display:none;margin-bottom:10px"></div>
+        <input type="file" id="scanFileInput" accept="image/*" capture="environment" style="display:none">
         <div id="medStockPicker" style="margin-bottom:10px">
           <button type="button" class="btn small secondary" id="btnStockPicker">📋 Pick from stock</button>
           <div id="stockPickerList" style="display:none;max-height:230px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px;background:#fff"></div>
@@ -525,7 +528,11 @@ function defaultDB(){
   return {
     patients: [], doctors: [], appointments: [], invoices: [],
     medicines: [], labTests: [], labOrders: [], dispenses: [],
-    settings: { clinicName: "MediCore Demo Clinic", address: "123 Wellness Avenue", phone: "+1 555 010 2233", currency: "$", country: "", currencyCode: "" },
+    /* Personal edition: a FRESH database starts on Bangladesh — the
+       exact values the Settings country picker writes when Bangladesh
+       is chosen (currency "৳", country "Bangladesh", code "BDT").
+       Databases already saved keep their own settings untouched. */
+    settings: { clinicName: "MediCore Demo Clinic", address: "123 Wellness Avenue", phone: "+1 555 010 2233", currency: "৳", country: "Bangladesh", currencyCode: "BDT" },
     users: [],
     _meta: { updatedAt: 0, device: "" },
     counters: Object.assign({}, CONFIG.COUNTER_STARTS)
@@ -1497,6 +1504,437 @@ var MED_SUGGESTIONS = [
   { name: "Multivitamin Tablet", generic: "Multivitamin" },
   { name: "Antacid Suspension", generic: "Antacid" }
 ];
+/* Bangladesh medicine dataset (personal edition): 395 common retail
+   medicines compiled from Bangladeshi pharmacy price references
+   (October 2026 snapshot — see bd-medicines-NOTES.md). Compact rows:
+   [brand, generic, strength, form, price] — price is the typical
+   retail price in BDT per unit (per bottle/tube/vial for non-tablet
+   forms; per cycle pack for contraceptives), or null when no price
+   could be verified. Prices are editable reference defaults, never
+   fixed. Powers the suggestion list and the Pharmacy Scan matcher. */
+var MED_DB = [
+  ["Alben","Albendazole","","Suspension",23.0],
+  ["Alben-DS","Albendazole","400mg","Tablet",5.0],
+  ["Ambrox","Ambroxol","15mg/5ml","Syrup",50.0],
+  ["Ambrox","Ambroxol","6mg/ml","Drops",40.0],
+  ["Ambrox SR","Ambroxol","75mg","Capsule",5.5],
+  ["Aroxol","Ambroxol","15mg/5ml","Syrup",50.0],
+  ["Boxol","Ambroxol","15mg/5ml","Syrup",50.0],
+  ["Brox","Ambroxol","15mg/5ml","Syrup",50.0],
+  ["Amdocal","Amlodipine","10mg","Tablet",8.0],
+  ["Amdocal","Amlodipine","2.5mg","Tablet",3.0],
+  ["Amdocal","Amlodipine","5mg","Tablet",5.5],
+  ["Amlocard","Amlodipine","10mg","Tablet",7.05],
+  ["Amlocard","Amlodipine","5mg","Tablet",5.0],
+  ["Amlopin","Amlodipine","10mg","Tablet",7.02],
+  ["Amlopin","Amlodipine","5mg","Tablet",5.01],
+  ["Amlosun","Amlodipine","5mg","Tablet",5.02],
+  ["Amlotab","Amlodipine","5mg","Tablet",5.0],
+  ["Camlodin","Amlodipine","5mg","Tablet",5.0],
+  ["Emlon","Amlodipine","5mg","Tablet",5.0],
+  ["Lodipin","Amlodipine","5mg","Tablet",4.5],
+  ["Amdocal Plus","Amlodipine + Atenolol","5mg+25mg","Tablet",6.5],
+  ["Amlocard Plus","Amlodipine + Atenolol","5mg+50mg","Tablet",7.0],
+  ["G-Amoxicillin","Amoxicillin","500mg","Capsule",6.0],
+  ["Moxacil","Amoxicillin","250mg","Capsule",3.6],
+  ["Moxacil","Amoxicillin","500mg","Capsule",7.5],
+  ["Moxacil DT","Amoxicillin","250mg","Tablet",3.5],
+  ["Moxin","Amoxicillin","500mg/vial","Other",55.0],
+  ["Tycil","Amoxicillin","500mg","Capsule",7.5],
+  ["Clamox","Amoxicillin + Clavulanic Acid","500mg+125mg","Tablet",32.0],
+  ["Moxaclav","Amoxicillin + Clavulanic Acid","500mg+125mg","Tablet",32.0],
+  ["Tyclav","Amoxicillin + Clavulanic Acid","500mg+125mg","Tablet",32.0],
+  ["Apixan","Apixaban","2.5mg","Tablet",10.0],
+  ["Ecosprin","Aspirin","75mg","Tablet",null],
+  ["Fixocard","Atenolol","50mg","Tablet",8.0],
+  ["Atomax","Atorvastatin","10mg","Tablet",10.0],
+  ["Atomax","Atorvastatin","20mg","Tablet",18.0],
+  ["Atorvast","Atorvastatin","10mg","Tablet",8.0],
+  ["Atova","Atorvastatin","10mg","Tablet",12.0],
+  ["Atova","Atorvastatin","20mg","Tablet",20.0],
+  ["Atova","Atorvastatin","40mg","Tablet",28.0],
+  ["Atovex","Atorvastatin","10mg","Tablet",10.0],
+  ["ATV","Atorvastatin","10mg","Tablet",5.0],
+  ["ATV","Atorvastatin","20mg","Tablet",10.0],
+  ["Avas","Atorvastatin","20mg","Tablet",20.0],
+  ["Avas","Atorvastatin","40mg","Tablet",27.71],
+  ["Azithrocin","Azithromycin","500mg","Tablet",35.0],
+  ["Azithromax","Azithromycin","500mg","Tablet",35.0],
+  ["Azyth","Azithromycin","500mg","Tablet",55.5],
+  ["Rozith","Azithromycin","500mg","Tablet",50.0],
+  ["Zimax","Azithromycin","200mg/5ml","Suspension",160.0],
+  ["Zimax","Azithromycin","250mg","Capsule",25.08],
+  ["Zimax","Azithromycin","500mg","Tablet",40.0],
+  ["Zinex","Azithromycin","250mg","Tablet",20.06],
+  ["Zinex","Azithromycin","500mg","Tablet",35.0],
+  ["Zita","Azithromycin","500mg","Tablet",40.0],
+  ["Zithracin","Azithromycin","500mg","Tablet",35.0],
+  ["Zithrin","Azithromycin","200mg/5ml","Suspension",140.0],
+  ["Zithrin","Azithromycin","250mg","Capsule",25.0],
+  ["Zithrin","Azithromycin","250mg","Tablet",25.0],
+  ["Zithrin","Azithromycin","500mg","Tablet",40.0],
+  ["Zithro","Azithromycin","250mg","Capsule",20.06],
+  ["Zithro","Azithromycin","500mg","Capsule",30.11],
+  ["Biltin","Bilastine","20mg","Tablet",15.0],
+  ["Bislol","Bisoprolol","10mg","Tablet",18.0],
+  ["Calbo","Calcium","500mg","Tablet",null],
+  ["Calbo-D","Calcium + Vitamin D3","500mg+200IU","Tablet",8.0],
+  ["Calboral-DX","Calcium + Vitamin D3","","Tablet",16.0],
+  ["Cef-3","Cefixime","200mg","Capsule",45.0],
+  ["Cefix","Cefixime","100mg/5ml","Suspension",210.0],
+  ["Cefix","Cefixime","400mg","Capsule",50.0],
+  ["Denvar","Cefixime","200mg","Capsule",35.0],
+  ["Denvar DS","Cefixime","200mg/5ml","Suspension",320.0],
+  ["Betasef","Cefradine","125mg/5ml","Suspension",90.0],
+  ["Betasef","Cefradine","250mg","Capsule",8.0],
+  ["Betasef","Cefradine","500mg","Capsule",15.0],
+  ["Betasef DS","Cefradine","250mg/5ml","Suspension",120.35],
+  ["Cefadin","Cefradine","125mg/5ml","Suspension",80.0],
+  ["Cefadin","Cefradine","500mg","Capsule",12.0],
+  ["Cefasia","Cefradine","500mg","Capsule",13.0],
+  ["Cefracef","Cefradine","250mg","Capsule",8.0],
+  ["Cefracef","Cefradine","500mg","Capsule",15.0],
+  ["G-Cefradine","Cefradine","500mg/vial","Other",38.01],
+  ["Vecef","Cefradine","1gm/vial","Other",80.0],
+  ["Ceftriaid","Ceftriaxone","250mg/vial","Other",118.17],
+  ["Traxon","Ceftriaxone","1gm/vial","Other",250.0],
+  ["Traxon","Ceftriaxone","2gm/vial","Other",350.0],
+  ["Traxon","Ceftriaxone","500mg/vial","Other",150.0],
+  ["Tribac","Ceftriaxone","1gm/vial","Other",190.0],
+  ["Tribac","Ceftriaxone","250mg/vial","Other",90.0],
+  ["Tribac","Ceftriaxone","500mg/vial","Other",120.0],
+  ["Triforce","Ceftriaxone","1gm/vial","Other",190.0],
+  ["Triject","Ceftriaxone","1gm/vial","Other",250.0],
+  ["Triject","Ceftriaxone","500mg/vial","Other",180.0],
+  ["Axim","Cefuroxime","500mg","Tablet",null],
+  ["Cefotil","Cefuroxime","250mg","Tablet",null],
+  ["Cefotil","Cefuroxime","500mg","Tablet",null],
+  ["Furocef","Cefuroxime","250mg","Tablet",null],
+  ["Furocef","Cefuroxime","500mg","Tablet",null],
+  ["Zerotil","Cefuroxime","250mg","Tablet",null],
+  ["Acitrin","Cetirizine","10mg","Tablet",3.01],
+  ["Acitrin","Cetirizine","5mg/5ml","Syrup",34.0],
+  ["Alatrol","Cetirizine","10mg","Tablet",3.01],
+  ["Alatrol","Cetirizine","2.5mg/ml","Drops",28.0],
+  ["Alatrol","Cetirizine","5mg/5ml","Syrup",35.0],
+  ["Allernil","Cetirizine","10mg","Tablet",2.51],
+  ["Allernil","Cetirizine","5mg/5ml","Syrup",25.0],
+  ["Atrizin","Cetirizine","10mg","Tablet",3.0],
+  ["Atrizin","Cetirizine","2.5mg/ml","Drops",25.0],
+  ["Atrizin","Cetirizine","5mg/5ml","Syrup",30.0],
+  ["Cetizin","Cetirizine","10mg","Tablet",3.01],
+  ["CTZ","Cetirizine","10mg","Tablet",3.0],
+  ["Rhinil","Cetirizine","5mg/5ml","Syrup",30.0],
+  ["Cloram","Chloramphenicol","0.5%","Drops",30.94],
+  ["Cildip","Cilnidipine","10mg","Tablet",14.0],
+  ["Ciprocin","Ciprofloxacin","500mg","Tablet",15.05],
+  ["Ciproxim","Ciprofloxacin","500mg","Tablet",14.0],
+  ["Neofloxin","Ciprofloxacin","250mg","Tablet",8.5],
+  ["Neofloxin","Ciprofloxacin","500mg","Tablet",15.0],
+  ["Clovate","Clobetasol Propionate","0.05%","Ointment",68.0],
+  ["Clopidol","Clopidogrel","75mg","Tablet",9.09],
+  ["Clopid-As","Clopidogrel + Aspirin","75mg+75mg","Tablet",10.8],
+  ["Ecosprin Plus","Clopidogrel + Aspirin","75mg+75mg","Tablet",12.0],
+  ["Noclog Plus","Clopidogrel + Aspirin","75mg+75mg","Tablet",12.5],
+  ["Clotrim","Clotrimazole","1%","Cream",35.0],
+  ["Neosten","Clotrimazole","1%","Cream",45.0],
+  ["Alertadin","Desloratadine","5mg","Tablet",2.51],
+  ["Aslor","Desloratadine","5mg","Tablet",2.5],
+  ["Derat","Desloratadine","5mg","Tablet",2.5],
+  ["Des","Desloratadine","5mg","Tablet",4.0],
+  ["Deslor","Desloratadine","","Syrup",30.1],
+  ["Deslor","Desloratadine","5mg","Tablet",5.0],
+  ["Momento","Desloratadine","5mg","Tablet",2.5],
+  ["Neocilor","Desloratadine","5mg","Tablet",2.5],
+  ["Marvelon","Desogestrel + Ethinyl Estradiol","0.15mg+0.03mg","Tablet",105.0],
+  ["Dexonex","Dexamethasone","0.5mg","Tablet",0.89],
+  ["Clofenac","Diclofenac Sodium","50mg","Tablet",1.84],
+  ["Clofenac SR","Diclofenac Sodium","100mg","Tablet",5.0],
+  ["Diclofen","Diclofenac Sodium","12.5mg","Suppository",9.06],
+  ["Diclofen","Diclofenac Sodium","50mg","Suppository",15.5],
+  ["Diclofen","Diclofenac Sodium","50mg","Tablet",1.0],
+  ["Diclofen Gel","Diclofenac Sodium","1%","Ointment",22.0],
+  ["Motiwin","Domperidone","10mg","Tablet",3.0],
+  ["Noburn","Domperidone","10mg","Tablet",4.0],
+  ["Normogut","Domperidone","10mg","Tablet",2.7],
+  ["Omidon","Domperidone","10mg","Tablet",3.5],
+  ["Omidon","Domperidone","5mg/5ml","Suspension",40.0],
+  ["Omidon","Domperidone","5mg/ml","Drops",25.0],
+  ["Doxicap","Doxycycline","100mg","Capsule",2.2],
+  ["Doxicap","Doxycycline","50mg","Capsule",1.42],
+  ["Doxin","Doxycycline","100mg","Capsule",2.03],
+  ["Doxin","Doxycycline","50mg","Capsule",1.4],
+  ["Doxy A","Doxycycline","100mg","Tablet",2.2],
+  ["Doxysina","Doxycycline","100mg","Capsule",2.0],
+  ["Jardian","Empagliflozin","25mg","Tablet",40.0],
+  ["Esoral","Esomeprazole","20mg","Capsule",7.0],
+  ["Esoral","Esomeprazole","40mg","Tablet",8.0],
+  ["Esoz MUPS","Esomeprazole","20mg","Tablet",10.0],
+  ["Exium MUPS","Esomeprazole","20mg","Tablet",11.0],
+  ["Exium MUPS","Esomeprazole","40mg","Tablet",16.5],
+  ["iMAX MUPS","Esomeprazole","20mg","Tablet",10.0],
+  ["iMAX MUPS","Esomeprazole","40mg","Tablet",14.0],
+  ["Maxima MUPS","Esomeprazole","20mg","Tablet",10.0],
+  ["Maxima MUPS","Esomeprazole","40mg","Tablet",14.0],
+  ["Maxpro","Esomeprazole","20mg","Capsule",7.0],
+  ["Maxpro","Esomeprazole","20mg","Tablet",7.0],
+  ["Maxpro MUPS","Esomeprazole","20mg","Tablet",10.0],
+  ["Maxpro MUPS","Esomeprazole","40mg","Tablet",15.0],
+  ["Nexpro MUPS","Esomeprazole","20mg","Tablet",11.0],
+  ["Nexpro MUPS","Esomeprazole","40mg","Tablet",16.5],
+  ["Nexum","Esomeprazole","20mg","Capsule",7.0],
+  ["Nexum MUPS","Esomeprazole","20mg","Tablet",10.0],
+  ["Nexum MUPS","Esomeprazole","40mg","Tablet",14.0],
+  ["Nexven MUPS","Esomeprazole","20mg","Tablet",8.0],
+  ["Sergel","Esomeprazole","20mg","Tablet",7.0],
+  ["Sergel Mups","Esomeprazole","20mg","Tablet",11.0],
+  ["Sergel Mups","Esomeprazole","40mg","Tablet",14.0],
+  ["Etorix","Etoricoxib","120mg","Tablet",15.0],
+  ["Etorix","Etoricoxib","60mg","Tablet",7.0],
+  ["Etorix","Etoricoxib","90mg","Tablet",12.0],
+  ["Etoshine","Etoricoxib","120mg","Tablet",14.0],
+  ["Etoshine","Etoricoxib","60mg","Tablet",7.0],
+  ["Etoshine","Etoricoxib","90mg","Tablet",12.0],
+  ["Etovan","Etoricoxib","120mg","Tablet",13.0],
+  ["Etovan","Etoricoxib","60mg","Tablet",6.5],
+  ["Etovan","Etoricoxib","90mg","Tablet",11.0],
+  ["Etoxib","Etoricoxib","60mg","Tablet",7.0],
+  ["Etoxib","Etoricoxib","90mg","Tablet",12.0],
+  ["Axidin","Famotidine","20mg","Tablet",2.0],
+  ["Axidin","Famotidine","40mg","Tablet",3.5],
+  ["Famas","Famotidine","20mg","Tablet",2.0],
+  ["Famas","Famotidine","40mg","Tablet",4.0],
+  ["Famodin","Famotidine","20mg","Tablet",3.5],
+  ["Famodin","Famotidine","40mg","Tablet",4.0],
+  ["Famodin","Famotidine","40mg/5ml","Suspension",50.0],
+  ["Famomax","Famotidine","20mg","Tablet",3.0],
+  ["Famomax","Famotidine","40mg","Tablet",5.0],
+  ["Famotack","Famotidine","20mg","Tablet",3.0],
+  ["Famotack","Famotidine","40mg","Tablet",5.0],
+  ["Axodin","Fexofenadine","60mg","Tablet",4.5],
+  ["Fenadin","Fexofenadine","120mg","Tablet",9.0],
+  ["Fexo","Fexofenadine","120mg","Tablet",9.0],
+  ["Fexo","Fexofenadine","60mg","Tablet",4.0],
+  ["Fexodin","Fexofenadine","120mg","Tablet",9.0],
+  ["Fexofen","Fexofenadine","120mg","Tablet",8.0],
+  ["Fexofen","Fexofenadine","180mg","Tablet",9.0],
+  ["Flugal","Fluconazole","150mg","Capsule",20.37],
+  ["Flugal","Fluconazole","50mg","Capsule",8.07],
+  ["Omastin","Fluconazole","150mg","Capsule",null],
+  ["Omastin","Fluconazole","50mg","Capsule",null],
+  ["G-Gliclazide","Gliclazide","80mg","Tablet",3.47],
+  ["Amaryl","Glimepiride","1mg","Tablet",6.14],
+  ["Amaryl","Glimepiride","2mg","Tablet",12.0],
+  ["Amaryl","Glimepiride","3mg","Tablet",15.5],
+  ["Diaryl","Glimepiride","1mg","Tablet",3.0],
+  ["Diaryl","Glimepiride","2mg","Tablet",5.0],
+  ["Mefoglip","Glipizide + Metformin","","Tablet",1.9],
+  ["Mefoglip DS","Glipizide + Metformin","","Tablet",3.7],
+  ["Metglip","Glipizide + Metformin","","Tablet",2.5],
+  ["Xyril","Hydroxyzine","25mg","Tablet",2.3],
+  ["Advel","Ibuprofen","100mg/5ml","Suspension",33.71],
+  ["Advel","Ibuprofen","200mg","Tablet",0.88],
+  ["Advel","Ibuprofen","400mg","Tablet",1.43],
+  ["Bufen-SR","Ibuprofen","300mg","Capsule",4.1],
+  ["Flamex","Ibuprofen","100mg/5ml","Suspension",56.0],
+  ["Flamex","Ibuprofen","200mg","Tablet",0.88],
+  ["Flamex","Ibuprofen","400mg","Tablet",1.43],
+  ["G-Ibuprofen","Ibuprofen","400mg","Tablet",1.2],
+  ["Ifen","Ibuprofen","400mg","Tablet",1.28],
+  ["Rebufen","Ibuprofen","400mg","Tablet",1.25],
+  ["Mixtard 30","Insulin Human (Mixture 30/70)","100IU/ml","Other",422.0],
+  ["Mixtard 30 Penfill","Insulin Human (Mixture 30/70)","100IU/ml","Other",510.0],
+  ["Actrapid","Insulin Human (Regular)","100IU/ml","Other",420.0],
+  ["Insulatard","Insulin Isophane","100IU/ml","Other",402.55],
+  ["Insulatard Penfill","Insulin Isophane","100IU/ml","Other",437.0],
+  ["Ketocon","Ketoconazole","2%","Other",250.0],
+  ["Rolac","Ketorolac","10mg","Tablet",12.0],
+  ["G-Levofloxacin","Levofloxacin","500mg/100ml","Other",95.0],
+  ["Genolev","Levofloxacin","500mg","Tablet",15.11],
+  ["Leflox","Levofloxacin","500mg","Tablet",15.11],
+  ["Leflox","Levofloxacin","750mg","Tablet",20.13],
+  ["Leo","Levofloxacin","500mg","Tablet",16.0],
+  ["Leoflox","Levofloxacin","250mg","Tablet",7.02],
+  ["Leoflox","Levofloxacin","500mg","Tablet",15.05],
+  ["Lequin","Levofloxacin","500mg","Tablet",10.0],
+  ["Levonix","Levofloxacin","500mg","Tablet",12.6],
+  ["Levoxin","Levofloxacin","500mg","Tablet",15.3],
+  ["Thyrox","Levothyroxine","100mcg","Tablet",2.79],
+  ["Thyrox","Levothyroxine","12.5mcg","Tablet",0.7],
+  ["Thyrox","Levothyroxine","50mcg","Tablet",2.2],
+  ["Glipxen","Linagliptin","5mg","Tablet",14.17],
+  ["Linaglip-M","Linagliptin + Metformin","2.5mg+850mg","Tablet",16.0],
+  ["Alaron","Loratadine","10mg","Tablet",null],
+  ["Loradin","Loratadine","10mg","Tablet",null],
+  ["Pretin","Loratadine","10mg","Tablet",null],
+  ["Tirlor","Loratadine","10mg","Tablet",null],
+  ["Angilock","Losartan","100mg","Tablet",12.0],
+  ["Angilock","Losartan","50mg","Tablet",10.0],
+  ["Losacard","Losartan","25mg","Tablet",4.51],
+  ["Losarcar","Losartan","50mg","Tablet",6.0],
+  ["Losarpex","Losartan","50mg","Tablet",8.0],
+  ["Angilock Plus","Losartan + Hydrochlorothiazide","","Tablet",12.03],
+  ["Lulizol","Luliconazole","1%","Cream",180.0],
+  ["Acliz","Meclizine","50mg","Tablet",2.5],
+  ["Nomosic","Meclizine","50mg","Tablet",2.55],
+  ["Comet","Metformin","850mg","Tablet",6.02],
+  ["Meformin","Metformin","500mg","Tablet",2.0],
+  ["Metarin","Metformin","500mg","Tablet",4.0],
+  ["Metfomin","Metformin","850mg","Tablet",4.0],
+  ["Metform","Metformin","500mg","Tablet",4.5],
+  ["Metnaaf","Metformin","850mg","Tablet",6.0],
+  ["Amodis","Metronidazole","200mg/5ml","Suspension",35.0],
+  ["Amodis","Metronidazole","400mg","Tablet",1.7],
+  ["Filmet","Metronidazole","200mg/5ml","Suspension",35.0],
+  ["Filmet","Metronidazole","400mg","Tablet",1.7],
+  ["Flagyl","Metronidazole","200mg/5ml","Suspension",35.0],
+  ["Flagyl","Metronidazole","400mg","Tablet",1.7],
+  ["Flamyd","Metronidazole","500mg","Tablet",2.0],
+  ["Metryl","Metronidazole","200mg","Tablet",1.0],
+  ["Metryl","Metronidazole","400mg","Tablet",1.7],
+  ["Metryl","Metronidazole","500mg","Tablet",2.0],
+  ["Micoral","Miconazole","2%","Other",92.0],
+  ["Tetrasol","Monosulfiram","25%","Other",125.0],
+  ["Lumona","Montelukast","10mg","Tablet",16.8],
+  ["M-Kast","Montelukast","10mg","Tablet",15.0],
+  ["Molukat","Montelukast","10mg","Tablet",15.0],
+  ["Mon","Montelukast","10mg","Tablet",16.5],
+  ["Monalast","Montelukast","10mg","Tablet",15.0],
+  ["Monalast","Montelukast","5mg","Tablet",8.0],
+  ["Monark","Montelukast","10mg","Tablet",14.1],
+  ["Monas","Montelukast","10mg","Tablet",17.5],
+  ["Monas","Montelukast","4mg","Tablet",7.0],
+  ["Monas","Montelukast","5mg","Tablet",9.0],
+  ["Monasic","Montelukast","10mg","Tablet",16.0],
+  ["Montair","Montelukast","10mg","Tablet",17.5],
+  ["Montela","Montelukast","10mg","Tablet",10.0],
+  ["Montene","Montelukast","10mg","Tablet",17.5],
+  ["Montinex","Montelukast","10mg","Tablet",17.5],
+  ["Odmon","Montelukast","10mg","Tablet",16.0],
+  ["Flomox","Moxifloxacin","0.5%","Drops",140.0],
+  ["Iventi","Moxifloxacin","0.5%","Drops",160.0],
+  ["Iventi-D","Moxifloxacin + Dexamethasone","0.5%+0.1%","Drops",216.0],
+  ["Aristovit","Multivitamin","","Tablet",null],
+  ["Napix","Naproxen","500mg","Tablet",7.0],
+  ["Napro","Naproxen","250mg","Tablet",7.0],
+  ["Napro","Naproxen","500mg","Tablet",11.0],
+  ["Napro-A","Naproxen","250mg","Tablet",6.0],
+  ["Napro-A","Naproxen","500mg","Tablet",10.0],
+  ["Naprosyn","Naproxen","125mg/5ml","Suspension",130.0],
+  ["Naprosyn","Naproxen","250mg","Tablet",9.0],
+  ["Naprosyn","Naproxen","500mg","Tablet",16.0],
+  ["Naprox","Naproxen","250mg","Tablet",7.0],
+  ["Menoral","Norethisterone","5mg","Tablet",5.85],
+  ["Normens","Norethisterone","5mg","Tablet",6.8],
+  ["Femicon","Norgestrel + Ethinyl Estradiol","0.3mg+0.03mg","Tablet",45.5],
+  ["Nystat","Nystatin","100000 IU/ml","Suspension",46.84],
+  ["Gastril","Omeprazole","40mg/vial","Other",70.0],
+  ["Losectil","Omeprazole","10mg","Capsule",3.0],
+  ["Losectil","Omeprazole","20mg","Capsule",5.0],
+  ["Lotil","Omeprazole","20mg","Capsule",4.0],
+  ["Omep","Omeprazole","20mg","Capsule",6.0],
+  ["Omep","Omeprazole","40mg","Capsule",8.0],
+  ["Omeprol","Omeprazole","40mg/vial","Other",90.0],
+  ["Omitac","Omeprazole","20mg","Capsule",5.0],
+  ["PPI","Omeprazole","20mg","Capsule",7.0],
+  ["Proceptin","Omeprazole","40mg/vial","Other",100.0],
+  ["Seclo","Omeprazole","20mg","Capsule",6.0],
+  ["Seclo","Omeprazole","40mg","Capsule",9.0],
+  ["Seclo","Omeprazole","40mg/vial","Other",95.0],
+  ["Seclogen","Omeprazole","20mg","Capsule",5.0],
+  ["Seclogen","Omeprazole","40mg","Capsule",9.0],
+  ["Sectil","Omeprazole","20mg","Capsule",6.0],
+  ["Stosec","Omeprazole","40mg/vial","Other",90.0],
+  ["Xeldrin","Omeprazole","10mg","Capsule",3.0],
+  ["Xeldrin","Omeprazole","20mg","Capsule",6.0],
+  ["Ofran","Ondansetron","8mg/4ml","Other",28.8],
+  ["Ondason","Ondansetron","8mg","Tablet",9.0],
+  ["Vomiset","Ondansetron","8mg","Tablet",null],
+  ["Zofra ODT","Ondansetron","8mg","Tablet",null],
+  ["Orsaline-N","Oral Rehydration Salts","","ORS",6.0],
+  ["Tetrasaline","Oral Rehydration Salts","","ORS",null],
+  ["Panpro","Pantoprazole","20mg","Tablet",5.5],
+  ["Panpro","Pantoprazole","40mg","Tablet",7.0],
+  ["Pansec","Pantoprazole","40mg","Tablet",8.0],
+  ["Pantex","Pantoprazole","20mg","Tablet",7.0],
+  ["Pantex","Pantoprazole","40mg","Tablet",8.0],
+  ["Pantid","Pantoprazole","20mg","Tablet",6.0],
+  ["Pantid","Pantoprazole","40mg","Tablet",9.0],
+  ["Pantobex","Pantoprazole","20mg","Tablet",5.0],
+  ["Pantonix","Pantoprazole","20mg","Tablet",7.0],
+  ["Pantonix","Pantoprazole","40mg","Tablet",10.0],
+  ["Protocid","Pantoprazole","20mg","Tablet",5.0],
+  ["Protonil","Pantoprazole","20mg","Tablet",6.0],
+  ["Trupan","Pantoprazole","20mg","Tablet",7.0],
+  ["Trupan","Pantoprazole","40mg","Tablet",10.0],
+  ["Trupan","Pantoprazole","40mg/vial","Other",90.0],
+  ["Ace","Paracetamol","500mg","Tablet",1.2],
+  ["Fast","Paracetamol","500mg","Tablet",1.2],
+  ["G-Paracetamol","Paracetamol","500mg","Tablet",1.0],
+  ["Napa","Paracetamol","1000mg","Tablet",2.25],
+  ["Napa","Paracetamol","120mg/5ml","Syrup",35.0],
+  ["Napa","Paracetamol","500mg","Tablet",1.2],
+  ["Napa","Paracetamol","80mg/ml","Drops",20.0],
+  ["Renova","Paracetamol","120mg/5ml","Suspension",35.0],
+  ["Renova","Paracetamol","250mg","Suppository",4.52],
+  ["Renova","Paracetamol","500mg","Suppository",8.03],
+  ["Renova","Paracetamol","500mg","Tablet",1.2],
+  ["Ace Plus","Paracetamol + Caffeine","500mg+65mg","Tablet",2.51],
+  ["Napa Extra","Paracetamol + Caffeine","500mg+65mg","Tablet",2.5],
+  ["Renova Plus","Paracetamol + Caffeine","500mg+65mg","Tablet",2.51],
+  ["Reset Plus","Paracetamol + Caffeine","500mg+65mg","Tablet",2.5],
+  ["Lorix","Permethrin","5%","Cream",60.0],
+  ["Lorix Plus","Permethrin","5%","Other",200.0],
+  ["Deltasone","Prednisolone","20mg","Tablet",5.76],
+  ["Prednisolone","Prednisolone","5mg","Tablet",1.7],
+  ["Finix","Rabeprazole","20mg","Tablet",7.0],
+  ["Rocovas","Rosuvastatin","20mg","Tablet",30.0],
+  ["Ropitor","Rosuvastatin","20mg","Tablet",30.1],
+  ["Rosetor","Rosuvastatin","20mg","Tablet",30.0],
+  ["Rostab","Rosuvastatin","20mg","Tablet",30.0],
+  ["Rosu","Rosuvastatin","20mg","Tablet",30.0],
+  ["Rosutin","Rosuvastatin","20mg","Tablet",32.0],
+  ["Rovast","Rosuvastatin","20mg","Tablet",30.0],
+  ["Sultolin","Salbutamol","100mcg","Inhaler",250.0],
+  ["Sultolin","Salbutamol","200mcg","Inhaler",2.51],
+  ["Sultolin","Salbutamol","2mg/5ml","Syrup",21.39],
+  ["Ventolin","Salbutamol","2mg/5ml","Syrup",20.64],
+  ["Telma","Telmisartan","20mg","Tablet",6.44],
+  ["Telma Plus","Telmisartan + Hydrochlorothiazide","40mg+12.5mg","Tablet",12.5],
+  ["Telfin","Terbinafine","1%","Cream",180.0],
+  ["Telfin","Terbinafine","250mg","Tablet",50.0],
+  ["Terbin","Terbinafine","1%","Cream",90.0],
+  ["Terbin","Terbinafine","250mg","Tablet",60.0],
+  ["Ceevit","Vitamin C","250mg","Tablet",1.9],
+  ["Vibose","Voglibose","0.2mg","Tablet",6.0],
+  ["Xinc","Zinc","","Syrup",50.0]
+];
+function medDbName(e){ return e[0] + (e[2] ? " " + e[2] : ""); }
+/* Exact lookup by display name ("Zimax 500mg"); also accepts the
+   datalist display form "Name — …" (the part before the dash). On
+   the rare brand+strength collision across forms, the tablet entry
+   wins, then the capsule. Returns {name, generic, strength, form,
+   price} or null. */
+var MED_DB_BY_NAME = null;
+function medDbIndex(){
+  if(MED_DB_BY_NAME) return MED_DB_BY_NAME;
+  var rank = { "Tablet": 0, "Capsule": 1 }, map = {};
+  MED_DB.forEach(function(e){
+    var key = medDbName(e).toLowerCase(), cur = map[key];
+    if(!cur || ((rank[e[3]] != null) && (rank[cur[3]] == null || rank[e[3]] < rank[cur[3]]))) map[key] = e;
+  });
+  MED_DB_BY_NAME = map;
+  return map;
+}
+function medDatasetFor(raw){
+  var v = (raw || "").trim().toLowerCase();
+  if(!v) return null;
+  var dash = v.indexOf(" — ");
+  if(dash > -1) v = v.substring(0, dash).trim();
+  var e = medDbIndex()[v];
+  if(!e) return null;
+  return { name: medDbName(e), generic: e[1], strength: e[2], form: e[3], price: e[4] };
+}
 /* Finds the suggestion for a typed medicine name: an exact brand match,
    or the display form "Brand — Generic" (split on the dash). Returns
    null for names that are not in the list. */
@@ -1506,9 +1944,18 @@ function medSuggestionFor(raw){
   var dash = v.indexOf(" — ");
   if(dash > -1) v = v.substring(0, dash).trim();
   for(var i = 0; i < MED_SUGGESTIONS.length; i++){
-    if(MED_SUGGESTIONS[i].name.toLowerCase() === v) return MED_SUGGESTIONS[i];
+    if(MED_SUGGESTIONS[i].name.toLowerCase() === v){
+      var hit = MED_SUGGESTIONS[i];
+      /* Enrich with the dataset reference price when the same name
+         is priced there (the built-in list itself carries no prices). */
+      var priced = medDatasetFor(raw);
+      if(priced && priced.name.toLowerCase() === hit.name.toLowerCase() && priced.price != null)
+        return { name: hit.name, generic: hit.generic, price: priced.price };
+      return hit;
+    }
   }
-  return null;
+  /* Fall back to the BD dataset (carries generic + reference price). */
+  return medDatasetFor(raw);
 }
 /* Finds a medicine already in stock by exact name (case-insensitive).
    Also accepts the datalist display form "Name — …" by matching the
@@ -1540,6 +1987,12 @@ function fillMedNameList(){
     if(!key || seen[key]) return; seen[key] = 1;
     parts.push('<option value="' + esc(m.name) + '">' + esc(m.name) + " — " + esc(money(m.price)) + " · Stock " + (Number(m.qty) || 0) + "</option>");
   });
+  MED_DB.forEach(function(e){
+    var nm = medDbName(e), key = nm.toLowerCase();
+    if(seen[key]) return; seen[key] = 1;
+    var label = nm + " — " + e[1] + (e[4] != null ? " · ৳" + Number(e[4]).toFixed(2) : "");
+    parts.push('<option value="' + esc(nm) + '">' + esc(label) + "</option>");
+  });
   MED_SUGGESTIONS.forEach(function(s){
     var key = s.name.toLowerCase();
     if(seen[key]) return; seen[key] = 1;
@@ -1565,6 +2018,17 @@ function applyMedSuggestion(input){
       var ig = el("f_mGeneric"); if(ig) ig.value = inv.generic || "";
       var sp = el("f_mPrice"); if(sp) sp.value = inv.price;
       var cp = el("f_mCost"); if(cp) cp.value = (inv.costPrice === "" || inv.costPrice == null) ? "" : inv.costPrice;
+    }
+    return;
+  }
+  var d = medDatasetFor(input.value);
+  if(d){
+    input.value = d.name;
+    if(input.id === "qaName"){
+      var dp = el("qaPrice"); if(dp && dp.value === "" && d.price != null) dp.value = d.price;
+    } else if(input.id === "f_mName"){
+      var dg = el("f_mGeneric"); if(dg) dg.value = d.generic;
+      var dsp = el("f_mPrice"); if(dsp && dsp.value === "" && d.price != null) dsp.value = d.price;
     }
     return;
   }
@@ -1607,6 +2071,128 @@ function pickStockMed(id){
   var list = el("stockPickerList"); if(list) list.style.display = "none";
   var q = el("qaQty"); if(q) q.focus();
 }
+/* ---------------- Pharmacy Scan (personal edition) ----------------
+   "📷 Scan" (quick-add bar and the medicine form) photographs a
+   medicine packet with the phone camera, reads the printed text
+   with Tesseract.js — loaded lazily from CDN, so the first scan
+   needs internet (the browser caches the engine afterwards) — and
+   matches it against the stock list + the BD dataset. A confident
+   match fills the form for a human to CHECK; nothing is ever saved
+   automatically. */
+var scanTarget = "quick";
+var tesseractPromise = null;
+function loadTesseract(){
+  if(typeof window !== "undefined" && window.Tesseract) return Promise.resolve(window.Tesseract);
+  if(tesseractPromise) return tesseractPromise;
+  tesseractPromise = new Promise(function(resolve, reject){
+    var s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    s.onload = function(){ (typeof window !== "undefined" && window.Tesseract) ? resolve(window.Tesseract) : reject(new Error("tesseract missing")); };
+    s.onerror = function(){ reject(new Error("tesseract load failed")); };
+    (document.head || document.body).appendChild(s);
+  });
+  return tesseractPromise;
+}
+function scanNotice(msg){
+  var n = el(scanTarget === "modal" ? "scanNoticeModal" : "scanNoticeQA");
+  if(!n) return;
+  n.textContent = msg || "";
+  n.style.display = msg ? "" : "none";
+}
+function startScan(target){
+  if(!requirePerm("pharmacy.write")) return;
+  scanTarget = target;
+  scanNotice("");
+  var inp = el("scanFileInput");
+  if(!inp) return;
+  inp.value = "";
+  inp.click();
+}
+/* --- Matcher (pure functions: no DOM, unit-testable) --- */
+function scanTokens(text){
+  return String(text == null ? "" : text).toUpperCase().replace(/[^A-Z0-9]+/g, " ").split(" ").filter(function(t){ return t.length > 0; });
+}
+function scanStrengthNums(strength){
+  var m = String(strength == null ? "" : strength).match(/\d+(?:\.\d+)?/g);
+  return m || [];
+}
+/* One matchable candidate. Brand tokens ignore tokens starting with
+   a digit (strengths, pack sizes); for stock rows the strength
+   numbers are read out of the medicine name itself. */
+function scanCandidate(brand, name, generic, strength, price, stocked){
+  return { name: name, generic: generic || "", price: (price === "" || price == null) ? null : Number(price),
+           brandToks: scanTokens(brand).filter(function(t){ return !/^\d/.test(t); }),
+           genericToks: scanTokens(generic),
+           strengthNums: strength ? scanStrengthNums(strength) : scanStrengthNums(name),
+           stocked: !!stocked };
+}
+function medScanCandidates(){
+  var cands = [];
+  DB.medicines.forEach(function(m){ cands.push(scanCandidate(m.name, m.name, m.generic, "", m.price, true)); });
+  MED_DB.forEach(function(e){ cands.push(scanCandidate(e[0], medDbName(e), e[1], e[2], e[4], false)); });
+  return cands;
+}
+var SCAN_MIN_SCORE = 60;
+/* Scores every candidate against the recognised text: full brand
+   match 60 (partial brand credit up to 30), generic up to 25,
+   matching strength number 25, small tie-breaks for stocked and
+   priced entries. Returns { entry, score, best }: entry is the
+   winning candidate when its score reaches SCAN_MIN_SCORE, else
+   null (best still reports the closest candidate seen). */
+function bestMedicineMatch(text, cands){
+  var set = {};
+  scanTokens(text).forEach(function(t){ set[t] = 1; });
+  var best = null, bestScore = -1;
+  (cands || []).forEach(function(c){
+    var score = 0, i, hit = 0;
+    if(c.brandToks.length){
+      for(i = 0; i < c.brandToks.length; i++) if(set[c.brandToks[i]]) hit++;
+      score += (hit === c.brandToks.length) ? 60 : Math.round(30 * hit / c.brandToks.length);
+    }
+    if(c.genericToks.length){
+      hit = 0;
+      for(i = 0; i < c.genericToks.length; i++) if(set[c.genericToks[i]]) hit++;
+      score += Math.round(25 * hit / c.genericToks.length);
+    }
+    if(c.strengthNums.length && set[c.strengthNums[0]]) score += 25;
+    if(c.stocked) score += 2;
+    if(c.price != null) score += 1;
+    if(score > bestScore){ bestScore = score; best = c; }
+  });
+  return { entry: (best && bestScore >= SCAN_MIN_SCORE) ? best : null, score: Math.max(bestScore, 0), best: best };
+}
+function fillScanResult(entry){
+  if(scanTarget === "modal"){
+    var n = el("f_mName"); if(n) n.value = entry.name;
+    var g = el("f_mGeneric"); if(g) g.value = entry.generic || "";
+    var p = el("f_mPrice"); if(p && entry.price != null) p.value = entry.price;
+  } else {
+    var qn = el("qaName"); if(qn) qn.value = entry.name;
+    var qp = el("qaPrice"); if(qp && entry.price != null) qp.value = entry.price;
+  }
+}
+function runScan(file){
+  if(!file) return;
+  scanNotice("Scanning…");
+  loadTesseract().then(function(T){
+    T.recognize(file, "eng").then(function(result){
+      var text = (result && result.data && result.data.text) || "";
+      var m = bestMedicineMatch(text, medScanCandidates());
+      if(m.entry){
+        fillScanResult(m.entry);
+        scanNotice("Scanned: " + m.entry.name + " — please check, then Save.");
+      } else {
+        var snip = text.replace(/\s+/g, " ").trim().substring(0, 120);
+        scanNotice(snip ? ("No medicine matched. Recognised text: \"" + snip + "\" — please type the name instead.")
+                        : "No text could be read from that photo — please type the medicine name instead.");
+      }
+    }, function(){
+      scanNotice("That photo could not be read — please try again, or type the medicine name instead.");
+    });
+  }, function(){
+    scanNotice("Scan needs internet the first time — please type the medicine name instead.");
+  });
+}
 function medFormHTML(m){
   m = m || {};
   return '<div class="field"><label>Medicine Name</label><input id="f_mName" list="medNameList" value="' + esc(m.name||"") + '"></div>' +
@@ -1614,7 +2200,9 @@ function medFormHTML(m){
     '<div class="row"><div class="field"><label>Stock Qty</label><input id="f_mQty" type="number" min="0" step="1" inputmode="numeric" value="' + (m.qty!=null?m.qty:"") + '"></div>' +
     '<div class="field"><label>Expiry Date</label><input id="f_mExpiry" type="date" value="' + esc(m.expiry||"") + '"></div></div>' +
     '<div class="row"><div class="field"><label>Sell Price</label><input id="f_mPrice" type="number" min="0" step="0.01" inputmode="decimal" value="' + (m.price!=null?m.price:"") + '"></div>' +
-    '<div class="field"><label>Buy Price (optional)</label><input id="f_mCost" type="number" min="0" step="0.01" inputmode="decimal" value="' + (m.costPrice!=null && m.costPrice!=="" ? m.costPrice : "") + '"></div></div>';
+    '<div class="field"><label>Buy Price (optional)</label><input id="f_mCost" type="number" min="0" step="0.01" inputmode="decimal" value="' + (m.costPrice!=null && m.costPrice!=="" ? m.costPrice : "") + '"></div></div>' +
+    '<div class="field"><button type="button" class="btn secondary" id="btnScanModal" style="width:100%">📷 Scan medicine packet</button>' +
+    '<div id="scanNoticeModal" class="small-txt muted" style="display:none;margin-top:6px"></div></div>';
 }
 function saveMedForm(existing){
   if(!requirePerm("pharmacy.write")) return false;
@@ -1667,6 +2255,10 @@ function quickAddMed(){
      path the price fields are optional: blank keeps the recorded one. */
   var existing = medInventoryFor(name);
   var priceRaw = fieldVal("qaPrice"), qtyRaw = fieldVal("qaQty");
+  /* A brand/dataset suggestion with a known reference price supplies
+     the sell price when the field was left blank. */
+  var sug = medSuggestionFor(name);
+  if(priceRaw === "" && !existing && sug && sug.price != null) priceRaw = String(sug.price);
   if(priceRaw === "" && !existing){ alert("Unit price is required."); el("qaPrice").focus(); return; }
   if(priceRaw !== "" && (isNaN(Number(priceRaw)) || Number(priceRaw) < 0)){ alert("Unit price must be a valid number."); el("qaPrice").focus(); return; }
   if(qtyRaw === "" || isNaN(Number(qtyRaw)) || Number(qtyRaw) < 1){ alert("Quantity is required."); el("qaQty").focus(); return; }
@@ -1690,7 +2282,7 @@ function quickAddMed(){
   }
   else {
     /* A recognised brand name brings its generic with it. */
-    var sug = medSuggestionFor(name);
+    sug = sug || medSuggestionFor(name);
     DB.medicines.push({ id: CONFIG.ID_PREFIXES.med + (DB.counters.med++), name: sug ? sug.name : name, generic: sug ? sug.generic : "",
                         qty: Math.floor(Number(qtyRaw)), price: round2(priceRaw), costPrice: costPrice, expiry: expiry });
   }
@@ -2524,6 +3116,11 @@ function init(){
   el("modalAlt").addEventListener("click", function(){ if(modalOnAlt) modalOnAlt(); });
   el("btnAddMed").addEventListener("click", openAddMedModal);
   el("btnQuickAdd").addEventListener("click", quickAddMed);
+  el("btnScanQA").addEventListener("click", function(){ startScan("quick"); });
+  el("scanFileInput").addEventListener("change", function(){ var f = this.files && this.files[0]; this.value = ""; if(f) runScan(f); });
+  /* The modal form is re-created per open, so its Scan button is
+     wired by delegation from document. */
+  document.addEventListener("click", function(e){ if(e.target && e.target.id === "btnScanModal") startScan("modal"); });
   el("btnStockPicker").addEventListener("click", toggleStockPicker);
   ["qaName", "qaPrice", "qaCost", "qaQty", "qaExpiry"].forEach(function(fid){
     el(fid).addEventListener("keydown", function(e){ if(e.key === "Enter"){ e.preventDefault(); quickAddMed(); } });
